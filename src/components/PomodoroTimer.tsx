@@ -7,30 +7,27 @@ interface CompletionData {
   workTime: number;
 }
 
-type TimerStatus = 'working' | 'break' | 'continue';
+type TimerStatus = 'idle' | 'working' | 'break';
 
 export default function PomodoroTimer() {
   const [minutes, setMinutes] = useState(25);
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  const [status, setStatus] = useState<TimerStatus>('working');
+  const [status, setStatus] = useState<TimerStatus>('idle');
   const [completionData, setCompletionData] = useState<CompletionData[]>([]);
   const [workTime, setWorkTime] = useState(25);
-  const [showCompletionChoice, setShowCompletionChoice] = useState(false);
   const [currentSessionStartTime, setCurrentSessionStartTime] = useState<number | null>(null);
-  const [continueStartTime, setContinueStartTime] = useState<number | null>(null);
   const breakTime = 5;
   const intervalRef = useRef<number | null>(null);
 
   const { playChime } = useChime();
 
   const handleTimerComplete = useCallback(() => {
-    setIsActive(false);
-
     // チャイムを鳴らす
     playChime();
 
     if (status === 'working') {
+      // 作業完了 → 完遂データを追加して自動で休憩開始
       const sessionTime = currentSessionStartTime ? Math.round((Date.now() - currentSessionStartTime) / 1000 / 60) : workTime;
       const newCompletion: CompletionData = {
         date: new Date().toISOString().split('T')[0],
@@ -38,50 +35,45 @@ export default function PomodoroTimer() {
       };
       setCompletionData(prev => [...prev, newCompletion]);
       setCurrentSessionStartTime(null);
-      setShowCompletionChoice(true);
+
+      // 自動で休憩開始
+      setStatus('break');
+      setMinutes(breakTime);
+      setSeconds(0);
+      // isActiveはtrueのまま継続
 
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('ポモドーロ完了！', {
-          body: '続行または休憩を選択してください',
+          body: '5分間の休憩を開始します',
         });
       }
     } else if (status === 'break') {
-      setStatus('working');
-      setMinutes(workTime);
+      // 休憩終了 → 待機画面に戻る
+      setIsActive(false);
+      setStatus('idle');
+      setMinutes(25);
       setSeconds(0);
 
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('休憩終了！', {
-          body: '作業を再開しましょう',
+          body: '次の作業を始めましょう',
         });
       }
     }
-  }, [status, currentSessionStartTime, workTime, playChime]);
+  }, [status, currentSessionStartTime, workTime, playChime, breakTime]);
 
   useEffect(() => {
     if (isActive) {
       intervalRef.current = window.setInterval(() => {
-        if (status === 'continue') {
-          // 続行モード：カウントアップ
-          setSeconds(prev => {
-            if (prev === 59) {
-              setMinutes(prev => prev + 1);
-              return 0;
-            }
-            return prev + 1;
-          });
-        } else {
-          // 通常のカウントダウン
-          if (seconds === 0) {
-            if (minutes === 0) {
-              handleTimerComplete();
-            } else {
-              setMinutes(minutes - 1);
-              setSeconds(59);
-            }
+        if (seconds === 0) {
+          if (minutes === 0) {
+            handleTimerComplete();
           } else {
-            setSeconds(seconds - 1);
+            setMinutes(minutes - 1);
+            setSeconds(59);
           }
+        } else {
+          setSeconds(seconds - 1);
         }
       }, 1000);
     } else {
@@ -95,17 +87,7 @@ export default function PomodoroTimer() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isActive, minutes, seconds, status, handleTimerComplete]);
-
-  const resetTimer = () => {
-    setIsActive(false);
-    setStatus('working');
-    setMinutes(25);
-    setSeconds(0);
-    setShowCompletionChoice(false);
-    setCurrentSessionStartTime(null);
-    setContinueStartTime(null);
-  };
+  }, [isActive, minutes, seconds, handleTimerComplete]);
 
   const startTimer = (duration: number) => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -116,67 +98,39 @@ export default function PomodoroTimer() {
     setMinutes(duration);
     setSeconds(0);
     setStatus('working');
-    setShowCompletionChoice(false);
     setCurrentSessionStartTime(Date.now());
     setIsActive(true);
   };
 
   const giveUp = () => {
     setIsActive(false);
-    setStatus('working');
+    setStatus('idle');
     setMinutes(25);
     setSeconds(0);
-    setShowCompletionChoice(false);
     setCurrentSessionStartTime(null);
-    setContinueStartTime(null);
   };
 
-  const handleContinue = () => {
-    setStatus('continue');
-    setMinutes(0);
-    setSeconds(0);
-    setShowCompletionChoice(false);
-    setContinueStartTime(Date.now());
-    setIsActive(true);
-  };
-
-  const handleBreak = () => {
-    // チャイムを鳴らす（休憩開始時）
+  const endBreak = () => {
     playChime();
-
-    if (status === 'continue' && continueStartTime) {
-      const continueTime = Math.round((Date.now() - continueStartTime) / 1000 / 60);
-      setCompletionData(prev => {
-        const updated = [...prev];
-        if (updated.length > 0) {
-          updated[updated.length - 1].workTime += continueTime;
-        }
-        return updated;
-      });
-      setContinueStartTime(null);
-    }
-
-    setStatus('break');
-    setMinutes(breakTime);
+    setIsActive(false);
+    setStatus('idle');
+    setMinutes(25);
     setSeconds(0);
-    setShowCompletionChoice(false);
-    setIsActive(true);
   };
 
   return (
     <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl p-6 relative overflow-hidden">
       {/* Gradient overlay for active state */}
       <div className={`absolute inset-0 bg-gradient-to-br transition-opacity duration-500 rounded-2xl ${
-        isActive ? 'from-emerald-500/10 to-cyan-500/10 opacity-100' : 'opacity-0'
+        isActive ? (status === 'break' ? 'from-orange-500/10 to-amber-500/10 opacity-100' : 'from-emerald-500/10 to-cyan-500/10 opacity-100') : 'opacity-0'
       }`}></div>
 
       {/* Content */}
       <div className="relative z-10">
         <div className="flex items-center gap-3 mb-6">
           <div className={`w-3 h-3 rounded-full transition-colors ${
-            status === 'break' ? 'bg-orange-400' :
-            status === 'continue' ? 'bg-purple-400 animate-pulse' :
-            isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
+            status === 'break' ? 'bg-orange-400 animate-pulse' :
+            status === 'working' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
           }`}></div>
           <h2 className="text-xl font-bold text-white">
             ポモドーロタイマー
@@ -191,67 +145,36 @@ export default function PomodoroTimer() {
                 {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
               </div>
               <div className={`absolute -inset-4 bg-gradient-to-br rounded-full blur-xl opacity-30 transition-opacity ${
-                isActive ? 'from-emerald-400 to-cyan-400' : 'from-slate-400 to-slate-600'
+                status === 'break' ? 'from-orange-400 to-amber-400' : 'from-emerald-400 to-cyan-400'
               }`}></div>
             </div>
-            {(status === 'break' || status === 'continue') && (
+            {status === 'break' && (
               <div className="flex items-center justify-center gap-4 text-slate-300">
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  status === 'break' ? 'bg-orange-500/20 text-orange-300' :
-                  status === 'continue' ? 'bg-purple-500/20 text-purple-300' :
-                  'bg-slate-500/20 text-slate-300'
-                }`}>
-                  {status === 'break' ? '🧘 休憩中' : status === 'continue' ? '✨ 続行中' : ''}
+                <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-500/20 text-orange-300">
+                  🧘 休憩中
                 </span>
               </div>
             )}
           </div>
         )}
 
-        {showCompletionChoice ? (
-          <div className="space-y-4 mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-white mb-2">🎉 お疲れさまでした！</h3>
-              <p className="text-slate-300 text-sm">続行または休憩を選択してください</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleContinue}
-                className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-purple-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
-              >
-                ✨ 続行
-              </button>
-              <button
-                onClick={handleBreak}
-                className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-orange-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
-              >
-                🧘 休憩
-              </button>
-            </div>
-          </div>
-        ) : status === 'continue' ? (
-          <div className="flex gap-3 mb-6">
-            <button
-              onClick={handleBreak}
-              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-orange-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              🧘 休憩
-            </button>
-            <button
-              onClick={resetTimer}
-              className="flex-1 bg-slate-700/50 hover:bg-slate-600/50 text-slate-200 font-semibold py-3 px-6 rounded-xl transition-all duration-200 border border-slate-600/50 transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              🔄 リセット
-            </button>
-          </div>
-        ) : isActive ? (
+        {isActive ? (
           <div className="text-center mb-6">
-            <button
-              onClick={giveUp}
-              className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-red-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              🏳️ ギブアップ
-            </button>
+            {status === 'break' ? (
+              <button
+                onClick={endBreak}
+                className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                ☕ 休憩終わり
+              </button>
+            ) : (
+              <button
+                onClick={giveUp}
+                className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-red-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                🏳️ ギブアップ
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-6 mb-6">
