@@ -2,9 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import BgmPlayer from './BgmPlayer';
 import { useChime } from '../hooks/useChime';
 
-interface CompletionData {
-  date: string;
-  workTime: number;
+interface DailyRecord {
+  date: string;        // "2024-01-26"
+  count: number;       // 完了回数
+  totalMinutes: number; // 合計作業分数
 }
 
 type TimerStatus = 'idle' | 'working' | 'break';
@@ -14,7 +15,10 @@ export default function PomodoroTimer() {
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<TimerStatus>('idle');
-  const [completionData, setCompletionData] = useState<CompletionData[]>([]);
+  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>(() => {
+    const saved = localStorage.getItem('moku2-daily-records');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [workTime, setWorkTime] = useState(25);
   const [currentSessionStartTime, setCurrentSessionStartTime] = useState<number | null>(null);
   const breakTime = 5;
@@ -22,18 +26,36 @@ export default function PomodoroTimer() {
 
   const { playChime } = useChime();
 
+  // LocalStorageに保存
+  useEffect(() => {
+    localStorage.setItem('moku2-daily-records', JSON.stringify(dailyRecords));
+  }, [dailyRecords]);
+
   const handleTimerComplete = useCallback(() => {
     // チャイムを鳴らす
     playChime();
 
     if (status === 'working') {
-      // 作業完了 → 完遂データを追加して自動で休憩開始
+      // 作業完了 → 日付ごとに集計して保存
       const sessionTime = currentSessionStartTime ? Math.round((Date.now() - currentSessionStartTime) / 1000 / 60) : workTime;
-      const newCompletion: CompletionData = {
-        date: new Date().toISOString().split('T')[0],
-        workTime: sessionTime
-      };
-      setCompletionData(prev => [...prev, newCompletion]);
+      const today = new Date().toISOString().split('T')[0];
+
+      setDailyRecords(prev => {
+        const existingIndex = prev.findIndex(r => r.date === today);
+        if (existingIndex >= 0) {
+          // 同じ日付があれば更新
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            count: updated[existingIndex].count + 1,
+            totalMinutes: updated[existingIndex].totalMinutes + sessionTime
+          };
+          return updated;
+        } else {
+          // なければ新規追加
+          return [...prev, { date: today, count: 1, totalMinutes: sessionTime }];
+        }
+      });
       setCurrentSessionStartTime(null);
 
       // 自動で休憩開始
@@ -181,7 +203,7 @@ export default function PomodoroTimer() {
             {/* メインの25分ボタン */}
             <button
               onClick={() => startTimer(25)}
-              className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-bold text-xl py-6 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 transform hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-bold text-xl py-6 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 transform hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
             >
               🚀 作業開始！
               <span className="text-2xl font-extrabold mx-2 px-2 py-1 bg-white/20 rounded-lg">25分</span>
@@ -220,21 +242,21 @@ export default function PomodoroTimer() {
         )}
 
         {/* 完遂履歴 */}
-        {completionData.length > 0 && (
+        {dailyRecords.length > 0 && (
           <div className="pt-4 border-t border-white/10">
             <h3 className="text-sm font-medium text-slate-200 mb-3">📊 完遂履歴</h3>
             <div className="space-y-2 max-h-32 overflow-y-auto">
-              {completionData.slice(-5).reverse().map((data, index) => (
+              {dailyRecords.slice(-5).reverse().map((record, index) => (
                 <div key={index} className="flex justify-between items-center py-2 px-3 bg-slate-700/30 rounded-lg text-sm">
-                  <span className="text-slate-300">{data.date}</span>
-                  <span className="text-cyan-400 font-mono">{data.workTime}分</span>
+                  <span className="text-slate-300">{record.date}</span>
+                  <span className="text-cyan-400 font-mono">{record.count}回 / {record.totalMinutes}分</span>
                 </div>
               ))}
             </div>
             <div className="mt-3 text-center">
               <span className="text-sm text-slate-400">
-                今日: {completionData.filter(d => d.date === new Date().toISOString().split('T')[0]).length}回 /
-                総計: {completionData.length}回
+                今日: {dailyRecords.find(r => r.date === new Date().toISOString().split('T')[0])?.count ?? 0}回 /
+                総計: {dailyRecords.reduce((sum, r) => sum + r.count, 0)}回
               </span>
             </div>
           </div>

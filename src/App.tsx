@@ -1,4 +1,5 @@
 import PomodoroTimer from './components/PomodoroTimer';
+import StickyNotesPanel from './components/StickyNotesPanel';
 
 function App() {
   return (
@@ -10,17 +11,25 @@ function App() {
         }}></div>
       </div>
 
-      <div className="max-w-lg mx-auto relative z-10">
-        <header className="relative text-center mb-12">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-3 tracking-tight">
+      <div className="max-w-6xl mx-auto relative z-10">
+        <header className="relative text-center mb-8">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2 tracking-tight">
             moku2
           </h1>
-          <p className="text-slate-300 text-lg font-medium">作業集中支援アプリ</p>
-          <div className="w-24 h-1 bg-gradient-to-r from-cyan-400 to-purple-400 mx-auto mt-4 rounded-full"></div>
+          <p className="text-slate-300 text-base font-medium">作業集中支援アプリ</p>
+          <div className="w-24 h-1 bg-gradient-to-r from-cyan-400 to-purple-400 mx-auto mt-3 rounded-full"></div>
         </header>
 
-        <div className="transform transition-all duration-300 hover:scale-[1.01]">
-          <PomodoroTimer />
+        <div className="flex gap-6 items-start">
+          {/* 左: ポモドーロタイマー */}
+          <div className="w-[440px] flex-shrink-0 transform transition-all duration-300 hover:scale-[1.01]">
+            <PomodoroTimer />
+          </div>
+
+          {/* 右: 付箋パネル */}
+          <div className="flex-1 min-w-0">
+            <StickyNotesPanel />
+          </div>
         </div>
       </div>
     </div>
